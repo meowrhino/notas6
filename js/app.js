@@ -1,8 +1,8 @@
 /*
  * notas6 — app
- * expediente: un río de fichas por fecha de creación (lo nuevo arriba),
- * pestañas de categoría, histograma de actividad, búsqueda full-text,
- * lector (hoja mecanografiada con cabecera de informe), atmósfera selvática.
+ * expediente: río de fichas por fecha de creación, pestañas de categoría,
+ * histograma de actividad, búsqueda full-text, lector (diálogo modal con
+ * cabecera de informe), atmósfera selvática. Navegación por teclado + a11y.
  */
 import { CATS, NOTAS } from './notas.js';
 
@@ -14,24 +14,30 @@ const COL = {
 const col = c => COL[c] || '#cdbf99';
 const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 
-// PIEZA Nº — folio de cadena de custodia, estable (orden global, no cambia al filtrar).
-// NOTAS va nuevo→viejo, así la nota más ANTIGUA es la Nº001.
+// PIEZA Nº — folio de cadena de custodia, estable (la nota más antigua = Nº001).
 const PIEZA = new Map(NOTAS.map((n,i)=>[n.id, String(NOTAS.length-i).padStart(3,'0')]));
 
 const $ = id => document.getElementById(id);
+const appEl = $('app');
 const rio = $('rio'), tabsEl = $('tabs'), idx = $('idx');
 const buscar = $('buscar'), res = $('res'), sub = $('sub');
 const lector = $('lector'), hoja = $('hoja'), hojaWrap = $('hoja-wrap');
 const lPrev = $('lector-prev'), lNext = $('lector-next'), lCopy = $('lector-copy'), atmos = $('atmos');
 
 let activeCat = null, query = '', lista = NOTAS;
-let cur = -1;       // ficha seleccionada por teclado (índice en lista)
-let curOpen = -1;   // nota abierta en el lector (índice en lista)
+let cur = -1;          // ficha seleccionada por teclado
+let curOpen = -1;      // nota abierta en el lector
+let prevFocus = null;  // foco a restaurar al cerrar el lector
+let pushedByOpen = false;
 
 // ── utilidades ──
 const strip = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const escAttr = s => esc(s).replace(/"/g,'&quot;');
+const escAttr = s => esc(s).replace(/"/g,'&quot;');      // para texto crudo en un atributo
+const qesc = s => s.replace(/"/g,'&quot;');              // texto ya esc()-ado → solo comillas
+
+// índice de búsqueda precomputado UNA vez (evita normalizar ~600KB por tecla)
+NOTAS.forEach(n => { n._s = strip((n.titulo||'') + '\n' + (n.preview||'') + '\n' + (n.texto||'')); });
 
 function accentRe(q){
   const e = strip(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')
@@ -39,7 +45,18 @@ function accentRe(q){
     .replace(/o/g,'[oóòöô]').replace(/u/g,'[uúùüû]').replace(/n/g,'[nñ]');
   return new RegExp('('+e+')','gi');
 }
-function hl(text, q){ return q ? esc(text).replace(accentRe(q),'<mark>$1</mark>') : esc(text); }
+// resalta SOBRE el texto crudo y escapa por tramos → nunca parte una entidad HTML
+function hl(text, q){
+  if(!q) return esc(text);
+  const re = accentRe(q); re.lastIndex = 0;
+  let out = '', last = 0, m;
+  while((m = re.exec(text)) !== null){
+    out += esc(text.slice(last, m.index)) + '<mark>' + esc(m[0]) + '</mark>';
+    last = m.index + m[0].length;
+    if(m[0].length === 0) re.lastIndex++;
+  }
+  return out + esc(text.slice(last));
+}
 
 function stampText(n){ const [Y,M,D]=n.iso.split('-'); return `${D} ${MESES[+M-1]} ${Y.slice(2)} · ${n.hora}`; }
 function stampRot(n){ return (parseInt(n.id.slice(0,4),16) % 15) - 7; }
@@ -54,17 +71,21 @@ function badgesHtml(n){
   return b ? `<div class="badges">${b}</div>` : '';
 }
 
-// ── pestañas de categoría (filtro) ──
+// ── pestañas de categoría (filtro) — botones, operables por teclado ──
 function renderTabs(){
   const orden = Object.entries(CATS).sort((a,b)=>b[1]-a[1]);
   tabsEl.innerHTML = orden.map(([c,n])=>
-    `<span class="tab" data-cat="${c}" style="background:${col(c)}">${c}<span class="c">${n}</span></span>`
+    `<button class="tab" type="button" data-cat="${escAttr(c)}" aria-pressed="false" aria-label="filtrar por ${escAttr(c)} (${n} notas)" style="background:${col(c)}">${esc(c)}<span class="c">${n}</span></button>`
   ).join('');
 }
 tabsEl.addEventListener('click', e=>{
   const t = e.target.closest('.tab'); if(!t) return;
   activeCat = (activeCat === t.dataset.cat) ? null : t.dataset.cat;
-  [...tabsEl.children].forEach(x=>x.classList.toggle('off', activeCat && x.dataset.cat!==activeCat));
+  [...tabsEl.children].forEach(x=>{
+    const on = x.dataset.cat === activeCat;
+    x.classList.toggle('off', activeCat && !on);
+    x.setAttribute('aria-pressed', String(on));
+  });
   render();
 });
 
@@ -72,10 +93,7 @@ tabsEl.addEventListener('click', e=>{
 function filtrar(){
   let l = NOTAS;
   if(activeCat) l = l.filter(n=>n.cats.includes(activeCat));
-  if(query){
-    const q = strip(query);
-    l = l.filter(n => strip(n.titulo).includes(q) || strip(n.preview).includes(q) || strip(n.texto).includes(q));
-  }
+  if(query){ const q = strip(query); l = l.filter(n => n._s.includes(q)); }
   return l;
 }
 
@@ -83,13 +101,13 @@ function filtrar(){
 function render(){
   lista = filtrar();
   cur = -1;
-  res.textContent = (query||activeCat) ? `${lista.length}` : '';
+  res.textContent = (query||activeCat) ? `${lista.length} piezas` : '';
   sub.textContent = `expediente nº6 · ${lista.length} piezas · por fecha`;
 
   if(!lista.length){ rio.innerHTML = '<div class="vacio">— sin pruebas —</div>'; idx.innerHTML=''; return; }
 
   rio.innerHTML = lista.map((n,i)=>`
-    <div class="ficha" data-id="${n.id}" style="--i:${i}" tabindex="0" role="button" aria-label="Pieza ${PIEZA.get(n.id)}: ${escAttr(n.titulo)} — ${stampText(n)}">
+    <div class="ficha" data-id="${n.id}" style="--i:${i}" tabindex="0" role="button" aria-label="Pieza ${PIEZA.get(n.id)}: ${escAttr(n.titulo)} — ${escAttr(stampText(n))}">
       <span class="punch"></span>
       <div class="top">
         <div class="topleft"><span class="pieza">Nº ${PIEZA.get(n.id)}</span><div class="cats">${catsHtml(n.cats)}</div></div>
@@ -127,7 +145,6 @@ function selFicha(i){
   el.focus({preventScroll:true});
 }
 document.addEventListener('keydown', e=>{
-  // lector abierto: ← → pasan de pieza, Esc cierra
   if(!lector.classList.contains('hidden')){
     if(e.key==='Escape') cerrar();
     else if(e.key==='ArrowRight') navLector(1);
@@ -138,7 +155,8 @@ document.addEventListener('keydown', e=>{
   if(e.key==='/'){ e.preventDefault(); buscar.focus(); return; }
   if(e.key==='Escape'){
     if(activeCat||query){ activeCat=null; query=''; buscar.value='';
-      [...tabsEl.children].forEach(x=>x.classList.remove('off')); render(); }
+      [...tabsEl.children].forEach(x=>{ x.classList.remove('off'); x.setAttribute('aria-pressed','false'); });
+      render(); }
     return;
   }
   if(e.key==='j'||e.key==='ArrowDown'){ e.preventDefault(); selFicha((cur<0?-1:cur)+1); }
@@ -198,16 +216,17 @@ idx.addEventListener('touchmove',  e=>{ jumpY(e.touches[0].clientY); }, {passive
 window.addEventListener('resize', ()=>requestAnimationFrame(buildIdx));
 
 // ── markdown → html ──
+// viñetas/checkbox PRIMERO (si no, '* ' lo consume la cursiva); URLs van con escAttr.
 function inline(s){
   return s
-    .replace(/!\[[^\]]*\]\(([^)]+)\)/g, (_,src)=>`<img src="${src}" loading="lazy">`)
-    .replace(/\[([^\]]+)\]\(([^)]+\.(?:mp4|mov|webm))\)/gi, (_,t,src)=>`<video src="${src}" controls playsinline preload="metadata"></video>`)
-    .replace(/\[([^\]]+)\]\(([^)]+\.(?:m4a|mp3|ogg|wav|flac))\)/gi, (_,t,src)=>`<audio src="${src}" controls></audio>`)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(?<![">=\]\/])(https?:\/\/[^\s<)]+[^\s<).,;:!?])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
+    .replace(/^- \[ \]\s?/,'☐ ').replace(/^- \[x\]\s?/i,'☑ ').replace(/^[-*] /,'• ')
+    .replace(/!\[[^\]]*\]\(([^)]+)\)/g, (_,src)=>`<img src="${qesc(src)}" loading="lazy">`)
+    .replace(/\[([^\]]+)\]\(([^)]+\.(?:mp4|mov|webm))\)/gi, (_,t,src)=>`<video src="${qesc(src)}" controls playsinline preload="metadata"></video>`)
+    .replace(/\[([^\]]+)\]\(([^)]+\.(?:m4a|mp3|ogg|wav|flac))\)/gi, (_,t,src)=>`<audio src="${qesc(src)}" controls></audio>`)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_,t,u)=>`<a href="${qesc(u)}" target="_blank" rel="noopener">${t}</a>`)
+    .replace(/(?<![">=\]\/])(https?:\/\/[^\s<)]+[^\s<).,;:!?])/g, m=>`<a href="${qesc(m)}" target="_blank" rel="noopener">${m}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|\s)\*([^*\n]+)\*/g, '$1<em>$2</em>')
-    .replace(/^- \[ \]\s?/,'☐ ').replace(/^- \[x\]\s?/i,'☑ ').replace(/^[-*] /,'• ');
+    .replace(/(^|\s)\*([^*\n]+)\*/g, '$1<em>$2</em>');
 }
 function mdToHtml(md){
   const lines = esc(md).split('\n');
@@ -226,27 +245,36 @@ function mdToHtml(md){
   return html;
 }
 
-// ── lector ──
+// ── lector (diálogo modal) ──
 function abrir(id){
   const n = NOTAS.find(x=>x.id===id); if(!n) return;
+  const wasOpen = !lector.classList.contains('hidden');
+  if(!wasOpen){ prevFocus = document.activeElement; appEl.inert = true; }
   curOpen = lista.findIndex(x=>x.id===id);
+
   $('lector-cats').innerHTML = catsHtml(n.cats);
   const st = $('lector-stamp'); st.textContent = stampText(n); st.style.transform = `rotate(${stampRot(n)}deg)`;
+  lector.setAttribute('aria-label', `Pieza Nº ${PIEZA.get(n.id)}: ${n.titulo}`);
 
   const adj = [n.links&&'LNK', n.img&&'IMG', n.video&&'VID', n.audio&&'AUD'].filter(Boolean).join(' ') || '—';
   const caso = `EXP6·${n.iso.slice(0,7)}·${n.id.slice(0,4).toUpperCase()}`;
   hoja.innerHTML =
     `<div class="informe">`
-    + `<div><b>CASO</b> ${caso}</div>`
+    + `<div><b>CASO</b> ${esc(caso)}</div>`
     + `<div><b>PIEZA</b> Nº ${PIEZA.get(n.id)}</div>`
-    + `<div><b>APERTURA</b> ${n.dia} ${n.fecha} · ${n.hora}</div>`
+    + `<div><b>APERTURA</b> ${esc(n.dia)} ${esc(n.fecha)} · ${esc(n.hora)}</div>`
     + `<div><b>CLASIF.</b> ${esc(n.cats.join(' / '))}</div>`
     + `<div><b>ADJUNTOS</b> ${adj}</div>`
     + `</div>` + mdToHtml(n.texto);
   hojaWrap.scrollTop = 0;
   lector.classList.remove('hidden');
   updateNav();
-  if(location.hash !== '#'+id) history.pushState(null,'','#'+id);
+  if(!wasOpen) lector.focus();
+
+  if(location.hash !== '#'+id){
+    if(wasOpen) history.replaceState(null,'','#'+id);   // navegar entre piezas no añade historial
+    else { history.pushState(null,'','#'+id); pushedByOpen = true; }
+  }
 }
 function updateNav(){
   lPrev.disabled = !(curOpen > 0);
@@ -257,13 +285,22 @@ function navLector(d){
   const i = curOpen + d;
   if(i>=0 && i<lista.length) abrir(lista[i].id);
 }
-function cerrar(){
+function cerrarUI(){
+  if(lector.classList.contains('hidden')) return;
   lector.classList.add('hidden');
-  if(location.hash) history.pushState(null,'',location.pathname+location.search);
+  appEl.inert = false;
+  if(prevFocus && prevFocus.focus) prevFocus.focus();
+  prevFocus = null;
+}
+function cerrar(){   // cierre iniciado por el usuario (botón / Esc)
+  if(lector.classList.contains('hidden')) return;
+  cerrarUI();                                     // cerrar de inmediato (no esperar a popstate)
+  if(pushedByOpen){ pushedByOpen = false; history.back(); }              // retira el #id del historial
+  else if(location.hash){ history.replaceState(null,'',location.pathname+location.search); }
 }
 $('cerrar').addEventListener('click', cerrar);
-lPrev.addEventListener('click', ()=>navLector(-1));   // anterior = más nueva (arriba)
-lNext.addEventListener('click', ()=>navLector(1));    // siguiente = más antigua (abajo)
+lPrev.addEventListener('click', ()=>navLector(-1));   // anterior = más nueva
+lNext.addEventListener('click', ()=>navLector(1));    // siguiente = más antigua
 lCopy.addEventListener('click', ()=>{
   if(curOpen<0 || !navigator.clipboard) return;
   navigator.clipboard.writeText(location.origin+location.pathname+'#'+lista[curOpen].id)
@@ -271,14 +308,18 @@ lCopy.addEventListener('click', ()=>{
 });
 window.addEventListener('popstate', ()=>{
   const id = location.hash.slice(1);
-  if(id && NOTAS.find(x=>x.id===id)) abrir(id); else cerrar();
+  if(id && NOTAS.find(x=>x.id===id)) abrir(id);
+  else { pushedByOpen = false; cerrarUI(); }
 });
 
 // ── toggle de atmósfera selvática ──
+function syncAtmos(){ atmos.setAttribute('aria-pressed', String(!document.body.classList.contains('sin-atmosfera'))); }
 if(localStorage.getItem('n6-sin-atmosfera')==='1') document.body.classList.add('sin-atmosfera');
+syncAtmos();
 atmos.addEventListener('click', ()=>{
   const off = document.body.classList.toggle('sin-atmosfera');
   localStorage.setItem('n6-sin-atmosfera', off ? '1' : '0');
+  syncAtmos();
 });
 
 // ── init ──

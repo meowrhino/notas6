@@ -68,13 +68,16 @@ body.sin-atmosfera .atmos{opacity:.45;filter:grayscale(1)}
   padding:10px 18px;border-bottom:1px solid var(--edge);flex-shrink:0;background:var(--manila);
 }
 .tab{
-  font-size:11px;font-weight:700;padding:3px 15px 4px 11px;cursor:pointer;
+  font:700 11px/1.2 'Courier Prime','Courier New',monospace;
+  border:0;appearance:none;-webkit-appearance:none;
+  padding:3px 15px 4px 11px;cursor:pointer;
   text-transform:lowercase;color:#241d12;user-select:none;white-space:nowrap;
   transition:transform .1s,opacity .12s,filter .12s;
   clip-path:polygon(0 0, calc(100% - 9px) 0, 100% 100%, 0 100%);
 }
 .tab:hover{transform:translateY(-3px);filter:brightness(1.06)}
 .tab:active{transform:translateY(0)}
+.tab:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .tab .c{opacity:.6;margin-left:5px;font-size:9px;font-weight:400}
 .tab.off{opacity:.3}
 

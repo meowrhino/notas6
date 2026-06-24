@@ -15,12 +15,12 @@
     <div class="bar">
       <h1>notas6</h1>
       <span class="sub" id="sub">expediente</span>
-      <button class="atmos" id="atmos" title="atmósfera selva on/off" aria-label="atmósfera selva on/off">🌿</button>
+      <button class="atmos" id="atmos" title="atmósfera selva on/off" aria-label="atmósfera selva on/off" aria-pressed="true"><span aria-hidden="true">🌿</span></button>
       <span class="conf">archivo<br>confidencial</span>
       <label class="slip">
-        <span>⌕</span>
-        <input type="text" id="buscar" placeholder="rastrear en el expediente…" autocomplete="off">
-        <span class="res" id="res"></span>
+        <span aria-hidden="true">⌕</span>
+        <input type="text" id="buscar" placeholder="rastrear en el expediente…" autocomplete="off" aria-label="buscar en el expediente">
+        <span class="res" id="res" role="status" aria-live="polite" aria-atomic="true"></span>
       </label>
     </div>
 
@@ -37,15 +37,15 @@
   <div class="vig" aria-hidden="true"></div>
 
   <!-- lector: hoja mecanografiada a página entera -->
-  <div class="lector hidden" id="lector">
+  <div class="lector hidden" id="lector" role="dialog" aria-modal="true" tabindex="-1">
     <div class="lector-bar">
       <div class="cats" id="lector-cats"></div>
       <div class="stamp" id="lector-stamp"></div>
       <div class="lector-nav">
-        <button class="lbtn" id="lector-prev" title="anterior · más nueva (←)" aria-label="anterior">‹</button>
-        <button class="lbtn" id="lector-next" title="siguiente · más antigua (→)" aria-label="siguiente">›</button>
-        <button class="lbtn" id="lector-copy" title="copiar enlace a esta pieza">copiar ⧉</button>
-        <button class="cerrar" id="cerrar">cerrar ✕</button>
+        <button class="lbtn" id="lector-prev" title="anterior · más nueva (←)" aria-label="anterior, pieza más nueva"><span aria-hidden="true">‹</span></button>
+        <button class="lbtn" id="lector-next" title="siguiente · más antigua (→)" aria-label="siguiente, pieza más antigua"><span aria-hidden="true">›</span></button>
+        <button class="lbtn" id="lector-copy" title="copiar enlace a esta pieza">copiar <span aria-hidden="true">⧉</span></button>
+        <button class="cerrar" id="cerrar">cerrar <span aria-hidden="true">✕</span></button>
       </div>
     </div>
     <div class="hoja-wrap" id="hoja-wrap">

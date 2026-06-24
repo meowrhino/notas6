@@ -12,7 +12,7 @@ Lee las notas de iCloud/notas6/<categoría>/*.md y genera js/notas.js con:
 Uso:  python3 _build/build.py
 """
 
-import os, re, json, hashlib, shutil, unicodedata
+import os, re, json, hashlib, shutil
 from datetime import datetime
 
 ROOT     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -23,15 +23,10 @@ MEDIA    = os.path.join(ROOT, 'media')
 SKIP_DIRS  = {'images', 'attachments', '.git', '.claude'}
 DIAS_ES    = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
 
-IMG_RE   = re.compile(r'\.(png|jpe?g|gif|svg|webp|heic)$', re.I)
-VID_RE   = re.compile(r'\.(mp4|mov|webm)$', re.I)
-AUD_RE   = re.compile(r'\.(mp3|ogg|m4a|wav|flac)$', re.I)
-MEDIA_REF= re.compile(r'(images|attachments)/([^)\s]+)')   # rutas relativas en el .md
-
-
-def strip_accents(s):
-    return ''.join(c for c in unicodedata.normalize('NFD', s)
-                   if unicodedata.category(c) != 'Mn')
+MEDIA_EXT = r'png|jpe?g|gif|svg|webp|heic|mp4|mov|webm|mp3|ogg|m4a|wav|flac'
+# solo rutas relativas que terminan en una extensión de media conocida
+# (así no reescribimos prosa que mencione "images/..." sin ser un adjunto real)
+MEDIA_REF = re.compile(r'(images|attachments)/([^)\s]+\.(?:' + MEDIA_EXT + r'))', re.I)
 
 
 def extraer_titulo(lines):
@@ -40,17 +35,18 @@ def extraer_titulo(lines):
     titulo, drop_idx = '', None
     for i, ln in enumerate(lines):
         s = ln.strip()
-        if s.startswith('#'):
+        if re.match(r'^#{1,6}\s', s):           # encabezado real (requiere espacio, como mdToHtml)
             titulo = re.sub(r'^#+\s*', '', s)
-            # ¿truncado con … y la siguiente línea no vacía lo completa?
-            if titulo.endswith('…') or titulo.endswith('...'):
-                pref = titulo.rstrip('….').strip()[:18].lower()
+            # ¿truncado por la elipsis "…" que mete Apple Notes, completado en la línea siguiente?
+            if titulo.endswith('…'):
+                base = titulo[:-1].strip()
                 for j in range(i + 1, len(lines)):
-                    nxt = re.sub(r'^#+\s*', '', lines[j].strip())
+                    nxt = lines[j].strip()
                     if not nxt:
                         continue
-                    if nxt.lower().startswith(pref):
-                        titulo, drop_idx = nxt, i   # usar la completa, borrar la truncada
+                    # exigir que la siguiente línea sea de verdad la versión completa
+                    if base and nxt.lower().startswith(base.lower()) and len(nxt) > len(base):
+                        titulo, drop_idx = nxt, i
                     break
             break
     return titulo, drop_idx
@@ -69,9 +65,9 @@ def procesar(path, categoria):
 
     texto = '\n'.join(lines).strip()
 
-    # cuerpo sin encabezados, para preview
+    # cuerpo sin encabezados (incl. "# " vacíos), para preview; deja pasar #hashtags
     cuerpo = [l.strip() for l in lines
-              if l.strip() and not l.strip().startswith('#')]
+              if l.strip() and not re.match(r'^#{1,6}(\s|$)', l.strip())]
     preview = ' '.join(cuerpo)[:160]
 
     has_img   = bool(re.search(r'\.(png|jpe?g|gif|svg|webp|heic)\)', contenido, re.I))
@@ -81,7 +77,11 @@ def procesar(path, categoria):
                 bool(re.search(r'(?<!\()https?://\S+', contenido))
 
     st = os.stat(path)
-    dt = datetime.fromtimestamp(st.st_birthtime)   # == fecha de creación de Apple Notes
+    bt = getattr(st, 'st_birthtime', None)         # fecha de creación (macOS == Apple Notes)
+    if bt is None:                                 # otros SO/FS sin birthtime: degradar avisando
+        bt = st.st_mtime
+        print(f'⚠ sin st_birthtime, uso mtime: {os.path.basename(path)}')
+    dt = datetime.fromtimestamp(bt)
 
     return {
         'titulo':  titulo,
@@ -89,7 +89,7 @@ def procesar(path, categoria):
         'fecha':   dt.strftime('%d/%m/%y'),
         'hora':    dt.strftime('%H:%M'),
         'dia':     DIAS_ES[dt.weekday()],
-        'sort':    st.st_birthtime,
+        'sort':    bt,
         'iso':     dt.strftime('%Y-%m-%d'),
         'preview': preview,
         'texto':   texto,
@@ -110,8 +110,8 @@ def main():
             if not fn.endswith('.md') or fn.startswith('.'):
                 continue
             info = procesar(os.path.join(cdir, fn), cat)
-            # descartar notas vacías ("Nueva nota" sin cuerpo)
-            cuerpo_real = re.sub(r'^#.*$', '', info['texto'], flags=re.M).strip()
+            # descartar notas vacías ("Nueva nota" sin cuerpo); tolera encabezado indentado
+            cuerpo_real = re.sub(r'^\s*#{1,6}\s.*$', '', info['texto'], flags=re.M).strip()
             if not cuerpo_real:
                 vacias += 1
                 continue
@@ -147,14 +147,19 @@ def main():
     # ── orden: por fecha de creación, lo nuevo arriba ──
     notas.sort(key=lambda n: n['sort'], reverse=True)
 
-    # id estable para routing (#id) y limpieza de campos internos
+    # longitud de id que GARANTIZA unicidad para el routing (#id); empieza en 8
+    id_len = 8
+    while id_len < 32 and len({n['_hash'][:id_len] for n in notas}) != len(notas):
+        id_len += 2
+
+    # limpieza de campos internos y conteo por categoría
     cats_count = {}
     out = []
     for n in notas:
         for c in n['cats']:
             cats_count[c] = cats_count.get(c, 0) + 1
         out.append({
-            'id':      n['_hash'][:8],
+            'id':      n['_hash'][:id_len],
             'titulo':  n['titulo'],
             'cats':    n['cats'],
             'fecha':   n['fecha'], 'hora': n['hora'], 'dia': n['dia'], 'iso': n['iso'],
@@ -174,6 +179,14 @@ def main():
     print('  rango:', out[-1]['iso'], '→', out[0]['iso'])
     for c, n in sorted(cats_count.items(), key=lambda x: -x[1]):
         print(f'    {n:>4}  {c}')
+
+    # aviso (no censura): posibles datos sensibles que se PUBLICARÍAN tal cual
+    LINT = re.compile(r'/Users/\w+|[\w.+-]+@[\w-]+\.\w{2,}|sk-[A-Za-z0-9]{12,}|ghp_[A-Za-z0-9]{20,}')
+    flag = [(n['titulo'], LINT.findall(n['texto'])) for n in out if LINT.search(n['texto'])]
+    if flag:
+        print(f'\n⚠ posibles datos sensibles en {len(flag)} notas PÚBLICAS (revísalas antes de publicar):')
+        for t, hits in flag[:25]:
+            print(f'    · {t[:42]:42}  →  {", ".join(sorted(set(hits))[:3])}')
 
 
 if __name__ == '__main__':
