@@ -15,6 +15,7 @@
     <div class="bar">
       <h1>notas6</h1>
       <span class="sub" id="sub">expediente</span>
+      <button class="atmos" id="atmos" title="atmósfera selva on/off" aria-label="atmósfera selva on/off">🌿</button>
       <span class="conf">archivo<br>confidencial</span>
       <label class="slip">
         <span>⌕</span>
@@ -31,12 +32,21 @@
     </div>
   </div>
 
+  <!-- capas de atmósfera selvática (fijas, sobre el río, bajo el lector) -->
+  <div class="clima" aria-hidden="true"></div>
+  <div class="vig" aria-hidden="true"></div>
+
   <!-- lector: hoja mecanografiada a página entera -->
   <div class="lector hidden" id="lector">
     <div class="lector-bar">
       <div class="cats" id="lector-cats"></div>
       <div class="stamp" id="lector-stamp"></div>
-      <button class="cerrar" id="cerrar">cerrar ✕</button>
+      <div class="lector-nav">
+        <button class="lbtn" id="lector-prev" title="anterior · más nueva (←)" aria-label="anterior">‹</button>
+        <button class="lbtn" id="lector-next" title="siguiente · más antigua (→)" aria-label="siguiente">›</button>
+        <button class="lbtn" id="lector-copy" title="copiar enlace a esta pieza">copiar ⧉</button>
+        <button class="cerrar" id="cerrar">cerrar ✕</button>
+      </div>
     </div>
     <div class="hoja-wrap" id="hoja-wrap">
       <div class="hoja" id="hoja"></div>
