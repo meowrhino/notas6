@@ -1,0 +1,179 @@
+/*
+ * notas6 — estética "expediente / archivo confidencial"
+ * papel manila + máquina de escribir + fichas de catálogo + histograma forense.
+ */
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+
+:root{
+  --manila:#e7d8b4;        /* papel de fondo */
+  --ficha:#f3ecd8;         /* ficha */
+  --desk:#cdbb8c;          /* mesa / acentos */
+  --line:#c3ad79;          /* líneas de ficha */
+  --edge:#9c8a5e;          /* bordes fuertes */
+  --ink:#2c2620;           /* tinta */
+  --ink2:#6f6447;          /* tinta tenue */
+  --stamp:#b14a3a;         /* sello rojo */
+}
+
+html,body{height:100%}
+body{
+  font-family:'Courier Prime','Courier New',monospace;
+  color:var(--ink);
+  background:var(--manila);
+  overflow:hidden;
+}
+
+#app{display:flex;flex-direction:column;height:100vh}
+
+/* ── barra superior ── */
+.bar{
+  display:flex;align-items:center;gap:14px;
+  padding:13px 18px 11px;border-bottom:2px dashed var(--edge);
+  flex-shrink:0;background:var(--manila);
+}
+.bar h1{font-family:'Special Elite',monospace;font-size:26px;font-weight:400;letter-spacing:.02em;line-height:1}
+.bar .sub{font-size:11px;color:var(--ink2)}
+.conf{
+  margin-left:auto;font-family:'Special Elite',monospace;font-size:10px;line-height:1.05;
+  text-align:center;color:var(--stamp);border:2px solid var(--stamp);padding:3px 8px;
+  transform:rotate(-6deg);text-transform:uppercase;letter-spacing:.06em;flex-shrink:0;opacity:.85;
+}
+.slip{
+  display:flex;align-items:center;gap:7px;
+  background:var(--ficha);border:1px solid var(--edge);padding:6px 11px;flex-shrink:0;
+}
+.slip span{color:var(--ink2)}
+.slip input{
+  border:none;background:transparent;font-family:inherit;font-size:13px;
+  color:var(--ink);outline:none;width:180px;
+}
+.slip input::placeholder{color:#a99a6f}
+.slip .res{font-size:10px;color:var(--ink2);min-width:30px;text-align:right}
+
+/* ── pestañas de categoría (filtro) — pestañas de archivo ── */
+.tabs{
+  display:flex;flex-wrap:wrap;gap:6px 5px;
+  padding:10px 18px;border-bottom:1px solid var(--edge);flex-shrink:0;
+}
+.tab{
+  font-size:11px;font-weight:700;padding:3px 15px 4px 11px;cursor:pointer;
+  text-transform:lowercase;color:#241d12;user-select:none;white-space:nowrap;
+  transition:opacity .12s,transform .08s;
+  clip-path:polygon(0 0, calc(100% - 9px) 0, 100% 100%, 0 100%);
+}
+.tab:active{transform:translateY(1px)}
+.tab .c{opacity:.6;margin-left:5px;font-size:9px;font-weight:400}
+.tab.off{opacity:.3}
+
+/* ── cuerpo: río + histograma ── */
+.body{display:flex;flex:1;min-height:0}
+
+.rio{
+  flex:1;overflow-y:auto;padding:16px 18px 60px;
+  display:flex;flex-direction:column;gap:13px;
+  background:repeating-linear-gradient(var(--manila),var(--manila) 13px,#0000000a 14px);
+  scroll-behavior:smooth;
+}
+.rio::-webkit-scrollbar{width:0}        /* el histograma ES la barra */
+
+/* ── ficha ── */
+.ficha{
+  background:var(--ficha);border:1px solid var(--line);
+  padding:0 14px 12px;position:relative;cursor:pointer;
+  transition:transform .08s,box-shadow .1s;
+}
+.ficha:hover{box-shadow:3px 3px 0 var(--edge);transform:translate(-1px,-1px)}
+.ficha .punch{
+  position:absolute;left:50%;top:-5px;transform:translateX(-50%);
+  width:9px;height:9px;border-radius:50%;background:var(--manila);border:1px solid var(--line);
+}
+.ficha .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-top:13px}
+.ficha .cats{display:flex;flex-wrap:wrap;gap:4px}
+.fctab{
+  font-size:10px;font-weight:700;padding:3px 13px 4px 9px;color:#241d12;white-space:nowrap;
+  clip-path:polygon(0 0, calc(100% - 8px) 0, 100% 100%, 0 100%);
+}
+.stamp{
+  flex-shrink:0;font-family:'Special Elite',monospace;font-size:11px;letter-spacing:.03em;
+  color:var(--stamp);border:2px solid var(--stamp);padding:2px 7px;line-height:1;
+  white-space:nowrap;transform-origin:center;
+}
+.ficha .ttl{font-size:13px;font-weight:700;line-height:1.25;margin-top:11px}
+.ficha .pv{font-size:11px;color:var(--ink2);margin-top:4px;line-height:1.45}
+.ficha .badges{display:flex;gap:4px;margin-top:8px}
+.badge{font-size:8px;font-weight:700;letter-spacing:.05em;border:1px solid var(--edge);padding:1px 3px;color:var(--ink2)}
+
+.vacio{padding:40px 4px;color:var(--ink2);font-size:13px;letter-spacing:.1em;text-transform:uppercase}
+
+/* ── histograma de actividad (cajón índice) ── */
+.idx{
+  width:108px;flex-shrink:0;border-left:2px solid var(--edge);
+  background:var(--desk);user-select:none;cursor:ns-resize;
+  display:flex;flex-direction:column;padding:6px 0;
+}
+.mrow{
+  flex:1;min-height:0;position:relative;display:flex;align-items:center;
+  padding:0 9px;border-bottom:1px solid #0000000f;overflow:hidden;
+}
+.mrow .mbar{
+  position:absolute;left:0;top:50%;transform:translateY(-50%);height:62%;
+  background:#b14a3a3d;border-right:2px solid var(--stamp);
+}
+.mrow .mlbl{
+  position:relative;font-family:'Special Elite',monospace;font-size:11px;
+  color:#5a4a28;white-space:nowrap;pointer-events:none;
+}
+.mrow.on{background:#0000000d}
+.mrow.on .mbar{background:#b14a3a7d}
+.mrow.on .mlbl{color:var(--stamp)}
+.mrow:hover .mbar{background:#b14a3a66}
+
+/* ── lector (hoja mecanografiada a página entera) ── */
+.lector{
+  position:fixed;inset:0;z-index:50;background:var(--manila);
+  display:flex;flex-direction:column;
+}
+.lector.hidden{display:none}
+.lector-bar{
+  display:flex;align-items:center;gap:12px;
+  padding:11px 18px;border-bottom:2px dashed var(--edge);flex-shrink:0;
+}
+.lector-bar .cats{display:flex;gap:5px}
+.cerrar{
+  margin-left:auto;font-family:inherit;font-size:13px;cursor:pointer;
+  background:var(--ficha);border:1px solid var(--edge);padding:5px 12px;color:var(--ink);
+  box-shadow:2px 2px 0 var(--edge);
+}
+.cerrar:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--edge)}
+.hoja-wrap{flex:1;overflow-y:auto;padding:30px 18px 80px}
+.hoja{
+  max-width:680px;margin:0 auto;background:var(--ficha);
+  border:1px solid var(--line);box-shadow:4px 4px 0 var(--desk);
+  padding:34px 40px 44px;
+  background-image:repeating-linear-gradient(var(--ficha),var(--ficha) 27px,#0000000d 28px);
+  background-attachment:local;
+}
+.hoja .meta{font-size:11px;color:var(--ink2);margin-bottom:20px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.hoja h1{font-family:'Special Elite',monospace;font-size:19px;font-weight:400;margin:0 0 14px;line-height:1.3}
+.hoja h2{font-size:15px;font-weight:700;margin:18px 0 8px}
+.hoja h3{font-size:14px;font-weight:700;margin:14px 0 6px}
+.hoja p{font-size:14px;line-height:1.85;margin:0 0 12px;white-space:pre-wrap;word-break:break-word}
+.hoja a{color:var(--stamp);text-decoration:underline;word-break:break-all}
+.hoja strong{font-weight:700}
+.hoja em{font-style:italic}
+.hoja img,.hoja video{max-width:100%;border:1px solid var(--edge);margin:14px 0;display:block}
+.hoja audio{width:100%;margin:12px 0}
+
+/* ── búsqueda: resaltado ── */
+mark{background:#f0d36a;color:var(--ink);padding:0 1px}
+
+/* ── responsive ── */
+@media(max-width:620px){
+  .idx{width:64px}
+  .mrow .mlbl{font-size:9px}
+  .slip input{width:104px}
+  .bar .sub{display:none}
+  .conf{font-size:9px;padding:2px 6px}
+  .hoja{padding:24px 20px 36px}
+}

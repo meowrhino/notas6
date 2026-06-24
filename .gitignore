@@ -1,0 +1,10 @@
+# ── fuente privada (notas personales) — NUNCA publicar ──
+iCloud/
+Google/
+_build/dates.tsv
+
+# ── local / temporal ──
+.claude/
+.DS_Store
+**/.DS_Store
+*.log
