@@ -41,10 +41,10 @@ def extraer_titulo(lines):
             if titulo.endswith('…'):
                 base = titulo[:-1].strip()
                 for j in range(i + 1, len(lines)):
-                    nxt = lines[j].strip()
+                    nxt = re.sub(r'^#+\s*', '', lines[j].strip())   # la completa suele ser otro encabezado
                     if not nxt:
                         continue
-                    # exigir que la siguiente línea sea de verdad la versión completa
+                    # exigir que sea de verdad la versión completa (no una frase cualquiera)
                     if base and nxt.lower().startswith(base.lower()) and len(nxt) > len(base):
                         titulo, drop_idx = nxt, i
                     break

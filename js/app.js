@@ -1,20 +1,21 @@
 /*
  * notas6 — app
- * expediente: río de fichas por fecha de creación, pestañas de categoría,
- * histograma de actividad, búsqueda full-text, lector (diálogo modal con
- * cabecera de informe), atmósfera selvática. Navegación por teclado + a11y.
+ * río de fichas por fecha (agrupadas por mes con encabezado pegajoso),
+ * pestañas de categoría, scrubber de tiempo fino, búsqueda full-text,
+ * lector (diálogo modal). Navegación por teclado + a11y.
  */
 import { CATS, NOTAS } from './notas.js';
 
 const COL = {
-  diario:'#d8584f', essays:'#5a83b8', work:'#7aa23c', dolor:'#cf6a2e',
-  comentarios:'#3aa78a', '!':'#e3a23a', demos:'#9079c4', 'sueños':'#c0a0d6',
-  'new lemuria':'#5fa8b0', '?':'#cf7f9e', songs:'#5a9ec4', main:'#bba63f',
+  diario:'#e5897e', essays:'#8aa9d6', work:'#a9c47e', dolor:'#e0a075',
+  comentarios:'#7fc9b2', '!':'#eccb86', demos:'#b8a6dc', 'sueños':'#d6c0e2',
+  'new lemuria':'#90c6cb', '?':'#dca7bd', songs:'#92bcd6', main:'#d4c98f',
 };
-const col = c => COL[c] || '#cdbf99';
+const col = c => COL[c] || '#d8cdb2';
 const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+const MES_LARGO = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
-// PIEZA Nº — folio de cadena de custodia, estable (la nota más antigua = Nº001).
+// PIEZA Nº — folio estable (la nota más antigua = Nº001).
 const PIEZA = new Map(NOTAS.map((n,i)=>[n.id, String(NOTAS.length-i).padStart(3,'0')]));
 
 const $ = id => document.getElementById(id);
@@ -25,18 +26,15 @@ const lector = $('lector'), hoja = $('hoja'), hojaWrap = $('hoja-wrap');
 const lPrev = $('lector-prev'), lNext = $('lector-next'), lCopy = $('lector-copy'), atmos = $('atmos');
 
 let activeCat = null, query = '', lista = NOTAS;
-let cur = -1;          // ficha seleccionada por teclado
-let curOpen = -1;      // nota abierta en el lector
-let prevFocus = null;  // foco a restaurar al cerrar el lector
-let pushedByOpen = false;
+let cur = -1, curOpen = -1, prevFocus = null, pushedByOpen = false;
+let fichaEls = [], offs = [], thumb = null;
 
 // ── utilidades ──
 const strip = s => s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const escAttr = s => esc(s).replace(/"/g,'&quot;');      // para texto crudo en un atributo
-const qesc = s => s.replace(/"/g,'&quot;');              // texto ya esc()-ado → solo comillas
+const escAttr = s => esc(s).replace(/"/g,'&quot;');
+const qesc = s => s.replace(/"/g,'&quot;');
 
-// índice de búsqueda precomputado UNA vez (evita normalizar ~600KB por tecla)
 NOTAS.forEach(n => { n._s = strip((n.titulo||'') + '\n' + (n.preview||'') + '\n' + (n.texto||'')); });
 
 function accentRe(q){
@@ -45,7 +43,6 @@ function accentRe(q){
     .replace(/o/g,'[oóòöô]').replace(/u/g,'[uúùüû]').replace(/n/g,'[nñ]');
   return new RegExp('('+e+')','gi');
 }
-// resalta SOBRE el texto crudo y escapa por tramos → nunca parte una entidad HTML
 function hl(text, q){
   if(!q) return esc(text);
   const re = accentRe(q); re.lastIndex = 0;
@@ -59,7 +56,7 @@ function hl(text, q){
 }
 
 function stampText(n){ const [Y,M,D]=n.iso.split('-'); return `${D} ${MESES[+M-1]} ${Y.slice(2)} · ${n.hora}`; }
-function stampRot(n){ return (parseInt(n.id.slice(0,4),16) % 15) - 7; }
+function stampRot(n){ return (parseInt(n.id.slice(0,4),16) % 7) - 3; }   // -3..3, sutil
 function stampHtml(n){ return `<div class="stamp" style="transform:rotate(${stampRot(n)}deg)">${stampText(n)}</div>`; }
 function catsHtml(cats){ return cats.map(c=>`<span class="fctab" style="background:${col(c)}">${c}</span>`).join(''); }
 function badgesHtml(n){
@@ -70,8 +67,9 @@ function badgesHtml(n){
   if(n.audio) b+='<span class="badge">AUD</span>';
   return b ? `<div class="badges">${b}</div>` : '';
 }
+function mesLabel(iso){ const [Y,M]=iso.split('-'); return `${MES_LARGO[+M-1]} ${Y}`; }
 
-// ── pestañas de categoría (filtro) — botones, operables por teclado ──
+// ── pestañas de categoría (filtro) ──
 function renderTabs(){
   const orden = Object.entries(CATS).sort((a,b)=>b[1]-a[1]);
   tabsEl.innerHTML = orden.map(([c,n])=>
@@ -97,27 +95,34 @@ function filtrar(){
   return l;
 }
 
-// ── río de fichas ──
+// ── río de fichas (agrupadas por mes) ──
 function render(){
   lista = filtrar();
   cur = -1;
   res.textContent = (query||activeCat) ? `${lista.length} piezas` : '';
-  sub.textContent = `expediente nº6 · ${lista.length} piezas · por fecha`;
+  sub.textContent = `${lista.length} piezas · por fecha`;
 
-  if(!lista.length){ rio.innerHTML = '<div class="vacio">— sin pruebas —</div>'; idx.innerHTML=''; return; }
+  if(!lista.length){ rio.innerHTML = '<div class="vacio">— sin pruebas —</div>'; idx.innerHTML=''; fichaEls=[]; return; }
 
-  rio.innerHTML = lista.map((n,i)=>`
-    <div class="ficha" data-id="${n.id}" style="--i:${i}" tabindex="0" role="button" aria-label="Pieza ${PIEZA.get(n.id)}: ${escAttr(n.titulo)} — ${escAttr(stampText(n))}">
-      <span class="punch"></span>
+  const count = {};
+  lista.forEach(n=>{ const ym=n.iso.slice(0,7); count[ym]=(count[ym]||0)+1; });
+
+  let html='', prevYM=null;
+  lista.forEach((n,i)=>{
+    const ym = n.iso.slice(0,7);
+    if(ym !== prevYM){ prevYM = ym; html += `<div class="mes">${mesLabel(n.iso)}<span class="n">${count[ym]}</span></div>`; }
+    html += `<article class="ficha" data-id="${n.id}" style="--i:${i}" tabindex="0" role="button" aria-label="Pieza ${PIEZA.get(n.id)}: ${escAttr(n.titulo)} — ${escAttr(stampText(n))}">
       <div class="top">
         <div class="topleft"><span class="pieza">Nº ${PIEZA.get(n.id)}</span><div class="cats">${catsHtml(n.cats)}</div></div>
         ${stampHtml(n)}
       </div>
-      <div class="ttl">${hl(n.titulo, query)}</div>
-      ${n.preview ? `<div class="pv">${hl(n.preview, query)}</div>` : ''}
+      <h3 class="ttl">${hl(n.titulo, query)}</h3>
+      ${n.preview ? `<p class="pv">${hl(n.preview, query)}</p>` : ''}
       ${badgesHtml(n)}
-    </div>`).join('');
-
+    </article>`;
+  });
+  rio.innerHTML = html;
+  fichaEls = [...rio.querySelectorAll('.ficha')];
   rio.scrollTop = 0;
   requestAnimationFrame(buildIdx);
 }
@@ -136,10 +141,10 @@ buscar.addEventListener('input', ()=>{
 
 // ── navegación por teclado en el río ──
 function selFicha(i){
-  i = Math.max(0, Math.min(i, lista.length-1));
+  i = Math.max(0, Math.min(i, fichaEls.length-1));
   cur = i;
-  const el = rio.children[i]; if(!el) return;
-  [...rio.children].forEach(c=>c.classList.remove('sel'));
+  const el = fichaEls[i]; if(!el) return;
+  fichaEls.forEach(c=>c.classList.remove('sel'));
   el.classList.add('sel');
   el.scrollIntoView({block:'nearest'});
   el.focus({preventScroll:true});
@@ -164,49 +169,42 @@ document.addEventListener('keydown', e=>{
   else if(e.key==='Enter' && cur>=0){ abrir(lista[cur].id); }
 });
 
-// ── histograma de actividad por mes ──
-let monthRows = [], offs = [];
+// ── scrubber de tiempo (fino tipo barra) ──
 function buildIdx(){
-  idx.innerHTML = '';
-  monthRows = [];
-  offs = [...rio.children].map(el=>el.offsetTop);
-  if(!lista.length) return;
-
-  const order=[], cnt={}, first={};
-  lista.forEach((n,i)=>{ const ym=n.iso.slice(0,7);
-    if(!(ym in cnt)){ cnt[ym]=0; order.push(ym); first[ym]=i; } cnt[ym]++; });
-  const max = Math.max(...order.map(ym=>cnt[ym]));
-
-  let prevY = null;
-  order.forEach(ym=>{
-    const [Y,M] = ym.split('-');
-    const lbl = MESES[+M-1].toLowerCase() + (Y!==prevY ? " '"+Y.slice(2) : '');
-    prevY = Y;
-    const row = document.createElement('div');
-    row.className = 'mrow'; row.dataset.ym = ym; row.dataset.i = first[ym];
-    row.title = `${cnt[ym]} nota${cnt[ym]>1?'s':''} · ${MESES[+M-1].toLowerCase()} ${Y}`;
-    row.innerHTML = `<span class="mbar" style="width:${Math.max(7,Math.round(cnt[ym]/max*100))}%"></span><span class="mlbl">${lbl}</span>`;
-    idx.appendChild(row);
-    monthRows.push({ym, i:first[ym]});
+  offs = fichaEls.map(el=>el.offsetTop);
+  if(!fichaEls.length){ idx.innerHTML=''; thumb=null; return; }
+  const SH = rio.scrollHeight || 1;
+  const seen = new Set();
+  let years = '';
+  fichaEls.forEach((el,i)=>{
+    const y = lista[i].iso.slice(0,4);
+    if(!seen.has(y)){ seen.add(y);
+      const top = Math.min(96, (el.offsetTop / SH) * 100);
+      years += `<span class="idx-year" style="top:${top.toFixed(1)}%">'${y.slice(2)}</span>`;
+    }
   });
+  idx.innerHTML = `<div class="idx-track"></div>${years}<div class="idx-thumb" id="idx-thumb"><span></span></div>`;
+  thumb = $('idx-thumb');
   syncIdx();
 }
-function jumpToIdx(i){ const el = rio.children[i]; if(el) rio.scrollTop = Math.max(0, el.offsetTop - 6); }
 function syncIdx(){
-  if(!lista.length || !rio.children.length) return;
-  const st = rio.scrollTop; let top=0;
-  for(let k=0;k<offs.length;k++){ if(offs[k] <= st+4) top=k; else break; }
-  const ym = lista[top] && lista[top].iso.slice(0,7);
-  [...idx.children].forEach(r=>r.classList.toggle('on', r.dataset.ym===ym));
+  if(!fichaEls.length || !thumb) return;
+  const SH = rio.scrollHeight || 1, vh = rio.clientHeight, trackH = idx.clientHeight;
+  const th = Math.max(30, vh / SH * trackH);
+  thumb.style.height = th + 'px';
+  thumb.style.top = Math.min(trackH - th, (rio.scrollTop / SH) * trackH) + 'px';
+  let i = 0; const st = rio.scrollTop;
+  for(let k=0;k<offs.length;k++){ if(offs[k] <= st+4) i=k; else break; }
+  const iso = lista[i] && lista[i].iso;
+  if(iso){ const [Y,M] = iso.split('-'); thumb.firstChild.textContent = `${MES_LARGO[+M-1]} '${Y.slice(2)}`; }
 }
 let raf;
 rio.addEventListener('scroll', ()=>{ if(raf) return; raf=requestAnimationFrame(()=>{ syncIdx(); raf=0; }); });
 let drag=false;
 function jumpY(clientY){
-  if(!monthRows.length) return;
   const r = idx.getBoundingClientRect();
-  const frac = Math.max(0, Math.min(.999, (clientY-r.top)/r.height));
-  jumpToIdx(monthRows[Math.floor(frac*monthRows.length)].i);
+  const frac = Math.max(0, Math.min(1, (clientY-r.top)/r.height));
+  rio.scrollTop = frac * rio.scrollHeight;
 }
 idx.addEventListener('mousedown', e=>{ drag=true; jumpY(e.clientY); });
 window.addEventListener('mousemove', e=>{ if(drag) jumpY(e.clientY); });
@@ -216,7 +214,6 @@ idx.addEventListener('touchmove',  e=>{ jumpY(e.touches[0].clientY); }, {passive
 window.addEventListener('resize', ()=>requestAnimationFrame(buildIdx));
 
 // ── markdown → html ──
-// viñetas/checkbox PRIMERO (si no, '* ' lo consume la cursiva); URLs van con escAttr.
 function inline(s){
   return s
     .replace(/^- \[ \]\s?/,'☐ ').replace(/^- \[x\]\s?/i,'☑ ').replace(/^[-*] /,'• ')
@@ -272,7 +269,7 @@ function abrir(id){
   if(!wasOpen) lector.focus();
 
   if(location.hash !== '#'+id){
-    if(wasOpen) history.replaceState(null,'','#'+id);   // navegar entre piezas no añade historial
+    if(wasOpen) history.replaceState(null,'','#'+id);
     else { history.pushState(null,'','#'+id); pushedByOpen = true; }
   }
 }
@@ -292,15 +289,15 @@ function cerrarUI(){
   if(prevFocus && prevFocus.focus) prevFocus.focus();
   prevFocus = null;
 }
-function cerrar(){   // cierre iniciado por el usuario (botón / Esc)
+function cerrar(){
   if(lector.classList.contains('hidden')) return;
-  cerrarUI();                                     // cerrar de inmediato (no esperar a popstate)
-  if(pushedByOpen){ pushedByOpen = false; history.back(); }              // retira el #id del historial
+  cerrarUI();
+  if(pushedByOpen){ pushedByOpen = false; history.back(); }
   else if(location.hash){ history.replaceState(null,'',location.pathname+location.search); }
 }
 $('cerrar').addEventListener('click', cerrar);
-lPrev.addEventListener('click', ()=>navLector(-1));   // anterior = más nueva
-lNext.addEventListener('click', ()=>navLector(1));    // siguiente = más antigua
+lPrev.addEventListener('click', ()=>navLector(-1));
+lNext.addEventListener('click', ()=>navLector(1));
 lCopy.addEventListener('click', ()=>{
   if(curOpen<0 || !navigator.clipboard) return;
   navigator.clipboard.writeText(location.origin+location.pathname+'#'+lista[curOpen].id)
@@ -314,7 +311,7 @@ window.addEventListener('popstate', ()=>{
 
 // ── toggle de atmósfera selvática ──
 function syncAtmos(){ atmos.setAttribute('aria-pressed', String(!document.body.classList.contains('sin-atmosfera'))); }
-if(localStorage.getItem('n6-sin-atmosfera')==='1') document.body.classList.add('sin-atmosfera');
+if(localStorage.getItem('n6-sin-atmosfera') !== '0') document.body.classList.add('sin-atmosfera'); // por defecto: limpio
 syncAtmos();
 atmos.addEventListener('click', ()=>{
   const off = document.body.classList.toggle('sin-atmosfera');
